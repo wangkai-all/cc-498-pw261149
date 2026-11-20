@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>客服工单主题分析系统</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div class="viz-root">
+  <header class="topbar">
+    <div>
+      <h1>客服工单主题分析</h1>
+      <p class="subtitle">词表 · 规则 · 模型三版本驱动，支持主题漂移、未知主题与多标签识别</p>
+    </div>
+    <div class="topbar-right">
+      <label class="theme-toggle">
+        <input type="checkbox" id="themeSwitch"> 深色模式
+      </label>
+      <div class="active-version" id="activeVersion">激活版本：加载中…</div>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="overview">总览趋势</button>
+    <button class="tab" data-tab="tickets">工单与证据</button>
+    <button class="tab" data-tab="versions">版本与重分类</button>
+    <button class="tab" data-tab="lineage">主题合并/拆分</button>
+    <button class="tab" data-tab="unknown">未知主题与纠正</button>
+    <button class="tab" data-tab="alerts">告警与导出</button>
+  </nav>
+
+  <!-- 总览 -->
+  <section class="panel active" id="tab-overview">
+    <div class="filter-row">
+      <label>趋势窗口
+        <select id="trendDays">
+          <option value="7">近 7 天</option>
+          <option value="14" selected>近 14 天</option>
+          <option value="30">近 30 天</option>
+        </select>
+      </label>
+      <button class="btn" id="btnDrift">立即检测漂移</button>
+      <button class="btn" id="btnEvaluate">评估告警</button>
+    </div>
+    <div class="stat-grid" id="statGrid"></div>
+    <div class="card">
+      <h2>主题趋势（按天工单量，多标签分别计数）</h2>
+      <div id="trendChart" class="chart"></div>
+      <div class="legend" id="trendLegend"></div>
+    </div>
+    <div class="card">
+      <h2>当前窗口主题分布</h2>
+      <div id="distChart" class="chart"></div>
+      <table class="data-table" id="distTable">
+        <thead><tr><th>主题</th><th>占比</th><th>分布条</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2>最近漂移快照</h2>
+      <table class="data-table" id="driftTable">
+        <thead><tr><th>窗口</th><th>样本量</th><th>漂移分数(JS)</th><th>显著变化主题</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 工单与证据 -->
+  <section class="panel" id="tab-tickets">
+    <div class="filter-row">
+      <input type="text" id="ticketSearch" placeholder="按工单号/标题搜索">
+      <button class="btn" id="btnLoadTickets">刷新</button>
+    </div>
+    <div class="card">
+      <h2>工单列表（重复工单已自动去重）</h2>
+      <table class="data-table" id="ticketTable">
+        <thead><tr><th>工单号</th><th>标题</th><th>状态</th><th>已纠正</th><th>事件时间</th><th>操作</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card hidden" id="evidenceCard">
+      <h2>样本证据与版本结果 <button class="btn btn-small" id="closeEvidence">关闭</button></h2>
+      <div id="evidenceBody"></div>
+    </div>
+    <div class="card">
+      <h2>新工单入库（在线分类）</h2>
+      <div class="form-grid">
+        <input type="text" id="newNo" placeholder="工单号，如 T-100">
+        <input type="text" id="newTitle" placeholder="标题">
+        <input type="text" id="newContent" placeholder="正文">
+        <button class="btn primary" id="btnIngest">提交并分类</button>
+      </div>
+      <pre class="result-box hidden" id="ingestResult"></pre>
+    </div>
+  </section>
+
+  <!-- 版本 -->
+  <section class="panel" id="tab-versions">
+    <div class="card">
+      <h2>分类器版本（词表 / 规则 / 模型）</h2>
+      <table class="data-table" id="versionTable">
+        <thead><tr><th>版本号</th><th>类型</th><th>阈值</th><th>激活</th><th>创建时间</th><th>操作</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2>历史工单重分类（原结果保留，新结果追加）</h2>
+      <div class="form-grid">
+        <select id="reclassVersion"></select>
+        <label class="check"><input type="checkbox" id="unknownOnly"> 仅重分类未知主题</label>
+        <button class="btn primary" id="btnReclass">执行重分类</button>
+      </div>
+      <pre class="result-box hidden" id="reclassResult"></pre>
+    </div>
+    <div class="card">
+      <h2>版本差异对比</h2>
+      <div class="form-grid">
+        <select id="diffA"></select>
+        <select id="diffB"></select>
+        <button class="btn" id="btnDiff">对比</button>
+      </div>
+      <pre class="result-box hidden" id="diffResult"></pre>
+    </div>
+    <div class="card">
+      <h2>基于人工纠正样本训练模型新版本</h2>
+      <div class="form-grid">
+        <input type="text" id="trainVersion" placeholder="新版本号，如 model-v2">
+        <button class="btn" id="btnTrain">训练并生成版本</button>
+      </div>
+      <pre class="result-box hidden" id="trainResult"></pre>
+    </div>
+  </section>
+
+  <!-- 血缘 -->
+  <section class="panel" id="tab-lineage">
+    <div class="card">
+      <h2>主题合并 / 拆分（自动级联更新报表与告警依赖）</h2>
+      <div class="form-grid">
+        <select id="lineageType"><option value="merge">合并 merge</option><option value="split">拆分 split</option></select>
+        <input type="text" id="lineageSource" placeholder="源主题 code，逗号分隔，如 billing,after_sale">
+        <input type="text" id="lineageTarget" placeholder="目标主题 code，逗号分隔，如 payment_general">
+        <input type="text" id="lineageReason" placeholder="原因（可选）">
+        <button class="btn primary" id="btnLineage">执行</button>
+      </div>
+      <pre class="result-box hidden" id="lineageResult"></pre>
+    </div>
+    <div class="card">
+      <h2>主题清单</h2>
+      <table class="data-table" id="topicTable">
+        <thead><tr><th>Code</th><th>名称</th><th>状态</th><th>归档时间</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2>血缘历史</h2>
+      <table class="data-table" id="lineageTable">
+        <thead><tr><th>类型</th><th>源主题</th><th>目标主题</th><th>原因</th><th>时间</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 未知与纠正 -->
+  <section class="panel" id="tab-unknown">
+    <div class="card">
+      <h2>未知主题样本队列</h2>
+      <table class="data-table" id="unknownTable">
+        <thead><tr><th>ID</th><th>工单</th><th>候选猜测</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2>人工纠正记录（机器结果保留，纠正作为新结果）</h2>
+      <table class="data-table" id="correctionTable">
+        <thead><tr><th>工单</th><th>原标签</th><th>纠正标签</th><th>原因</th><th>纠正人</th><th>时间</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2>对工单添加人工纠正</h2>
+      <div class="form-grid">
+        <input type="number" id="correctTicketId" placeholder="工单 ID">
+        <input type="text" id="correctLabels" placeholder="纠正标签 code，逗号分隔">
+        <input type="text" id="correctReason" placeholder="原因">
+        <button class="btn primary" id="btnCorrect">提交纠正</button>
+      </div>
+      <pre class="result-box hidden" id="correctResult"></pre>
+    </div>
+  </section>
+
+  <!-- 告警与导出 -->
+  <section class="panel" id="tab-alerts">
+    <div class="card">
+      <h2>告警列表</h2>
+      <table class="data-table" id="alertTable">
+        <thead><tr><th>级别</th><th>标题</th><th>详情</th><th>确认</th><th>时间</th><th>操作</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2>告警规则</h2>
+      <table class="data-table" id="ruleTable">
+        <thead><tr><th>名称</th><th>指标</th><th>阈值</th><th>级别</th><th>启用</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2>权限导出（admin 原文 / analyst 脱敏 / viewer 仅聚合）</h2>
+      <div class="form-grid">
+        <select id="exportRole">
+          <option value="admin">admin</option>
+          <option value="analyst" selected>analyst</option>
+          <option value="viewer">viewer</option>
+        </select>
+        <label class="check"><input type="checkbox" id="exportContent" checked> 包含工单内容</label>
+        <input type="text" id="exportActor" value="analyst" placeholder="操作人">
+        <button class="btn primary" id="btnExport">导出 CSV</button>
+      </div>
+      <pre class="result-box hidden" id="exportResult"></pre>
+    </div>
+    <div class="card">
+      <h2>导出审计日志</h2>
+      <table class="data-table" id="auditTable">
+        <thead><tr><th>操作人</th><th>角色</th><th>动作</th><th>详情</th><th>时间</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>
